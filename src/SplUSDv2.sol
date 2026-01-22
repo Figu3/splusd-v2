@@ -7,7 +7,6 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title SplUSDv2 - Staked plUSD Vault
 /// @author Trevee
@@ -17,7 +16,6 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 ///      to protect against the first depositor attack (inflation attack).
 contract SplUSDv2 is ERC4626, Pausable, Ownable2Step {
     using SafeERC20 for IERC20;
-    using Math for uint256;
 
     // ============ Events ============
 
@@ -25,12 +23,6 @@ contract SplUSDv2 is ERC4626, Pausable, Ownable2Step {
     /// @param donor Address that donated the yield
     /// @param amount Amount of plUSD donated
     event YieldDonated(address indexed donor, uint256 amount);
-
-    // ============ Constants ============
-
-    /// @dev Offset for virtual shares/assets to protect against inflation attacks
-    /// See: https://docs.openzeppelin.com/contracts/5.x/erc4626#inflation-attack
-    uint256 private constant VIRTUAL_OFFSET = 1e6;
 
     // ============ Constructor ============
 
@@ -137,11 +129,11 @@ contract SplUSDv2 is ERC4626, Pausable, Ownable2Step {
 
     // ============ Virtual Offset Overrides (Inflation Attack Protection) ============
 
-    /// @dev Override to add virtual offset for inflation attack protection
-    /// @return Total assets including virtual offset
+    /// @dev Override to add virtual offset for inflation attack protection.
+    ///      This creates 10^6 virtual shares/assets, making inflation attacks
+    ///      economically irrational. See: https://docs.openzeppelin.com/contracts/5.x/erc4626#inflation-attack
+    /// @return Decimal offset (6) for virtual shares calculation
     function _decimalsOffset() internal pure override returns (uint8) {
-        // Using 6 decimal offset (1e6) to match the VIRTUAL_OFFSET constant
-        // This provides protection against inflation attacks while maintaining precision
         return 6;
     }
 }
