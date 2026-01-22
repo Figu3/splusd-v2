@@ -1,0 +1,28 @@
+# Compiler output
+cache/
+out/
+
+# Ignores development broadcast logs
+broadcast/
+!/broadcast/Deploy.s.sol/
+
+# Docs
+docs/
+
+# Dotenv file
+.env
+
+# Coverage
+lcov.info
+coverage/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (if using any JS tooling)
+node_modules/
