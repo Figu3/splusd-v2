@@ -9,21 +9,26 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /// @title SplUSDv2 Fuzz Tests
 /// @notice Fuzz test suite to verify vault behavior with random inputs
 contract SplUSDv2FuzzTest is Test {
+    address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
+
     SplUSDv2 public vault;
     ERC20Mock public plUSD;
 
-    address public admin = makeAddr("admin");
+    address public deployer = makeAddr("deployer");
     address public alice = makeAddr("alice");
+
+    uint256 public constant SEED_DEPOSIT = 1000e18;
 
     function setUp() public {
         plUSD = new ERC20Mock("plUSD", "plUSD", 18);
-        vault = new SplUSDv2(IERC20(address(plUSD)), admin);
+        vault = new SplUSDv2(IERC20(address(plUSD)));
 
-        // Seed vault to avoid edge cases
-        plUSD.mint(admin, 1000e18);
-        vm.startPrank(admin);
-        plUSD.approve(address(vault), type(uint256).max);
-        vault.deposit(1000e18, admin);
+        // Seed vault with initial deposit burned to 0xdead
+        plUSD.mint(deployer, SEED_DEPOSIT);
+        vm.startPrank(deployer);
+        plUSD.approve(address(vault), SEED_DEPOSIT);
+        uint256 shares = vault.deposit(SEED_DEPOSIT, deployer);
+        vault.transfer(DEAD, shares);
         vm.stopPrank();
 
         // Setup alice
@@ -52,17 +57,14 @@ contract SplUSDv2FuzzTest is Test {
 
         vm.startPrank(alice);
 
-        // Deposit
         uint256 shares = vault.deposit(depositAmount, alice);
         assertGt(shares, 0);
 
-        // Withdraw max
         uint256 maxWithdraw = vault.maxWithdraw(alice);
         vault.withdraw(maxWithdraw, alice, alice);
 
         vm.stopPrank();
 
-        // Should get back approximately the same (within rounding)
         assertApproxEqRel(maxWithdraw, depositAmount, 0.001e18, "Should get back ~same amount");
     }
 
@@ -73,16 +75,13 @@ contract SplUSDv2FuzzTest is Test {
 
         vm.startPrank(alice);
 
-        // Deposit
         uint256 shares = vault.deposit(depositAmount, alice);
         assertGt(shares, 0);
 
-        // Redeem all shares
         uint256 assets = vault.redeem(shares, alice, alice);
 
         vm.stopPrank();
 
-        // Should get back approximately the same (within rounding)
         assertApproxEqRel(assets, depositAmount, 0.001e18, "Should get back ~same amount");
     }
 
@@ -90,54 +89,43 @@ contract SplUSDv2FuzzTest is Test {
 
     function testFuzz_DonateYield(uint256 depositAmount, uint256 yieldAmount) public {
         depositAmount = bound(depositAmount, 1e18, 1_000_000e18);
-        yieldAmount = bound(yieldAmount, 1e15, depositAmount); // Yield up to 100% of deposit
+        yieldAmount = bound(yieldAmount, 1e15, depositAmount);
 
-        plUSD.mint(alice, depositAmount);
-        plUSD.mint(admin, yieldAmount);
+        plUSD.mint(alice, depositAmount + yieldAmount);
 
-        // Alice deposits
-        vm.prank(alice);
+        vm.startPrank(alice);
         uint256 shares = vault.deposit(depositAmount, alice);
 
         uint256 assetsBefore = vault.convertToAssets(shares);
 
-        // Admin donates yield
-        vm.prank(admin);
         vault.donateYield(yieldAmount);
 
         uint256 assetsAfter = vault.convertToAssets(shares);
 
-        // Alice's assets should increase by approximately the yield amount
-        // (minus any amount that goes to the seed deposit from admin)
         assertGt(assetsAfter, assetsBefore, "Assets should increase after yield");
+        vm.stopPrank();
     }
 
     function testFuzz_MultipleYieldDonations(uint256 numDonations, uint256 seed) public {
         numDonations = bound(numDonations, 1, 20);
 
-        // Alice deposits
         uint256 depositAmount = 10000e18;
         plUSD.mint(alice, depositAmount);
         vm.prank(alice);
         uint256 shares = vault.deposit(depositAmount, alice);
 
-        uint256 totalYield = 0;
         uint256 assetsBefore = vault.convertToAssets(shares);
 
-        // Multiple yield donations
         for (uint256 i = 0; i < numDonations; i++) {
             uint256 yieldAmount = uint256(keccak256(abi.encode(seed, i))) % 1000e18 + 1e18;
-            plUSD.mint(admin, yieldAmount);
+            plUSD.mint(alice, yieldAmount);
 
-            vm.prank(admin);
+            vm.prank(alice);
             vault.donateYield(yieldAmount);
-
-            totalYield += yieldAmount;
         }
 
         uint256 assetsAfter = vault.convertToAssets(shares);
 
-        // Assets should have increased
         assertGt(assetsAfter, assetsBefore, "Assets should increase");
     }
 
@@ -148,31 +136,25 @@ contract SplUSDv2FuzzTest is Test {
 
         uint256 shares = vault.convertToShares(assets);
 
-        // Should always get some shares for non-zero assets
         if (assets > 0) {
             assertGt(shares, 0, "Should get shares for assets");
         }
     }
 
     function testFuzz_ConvertToAssets(uint256 shares) public view {
-        // With virtual offset (1e6), very small share amounts may round to 0 assets
-        // This is expected behavior - need minimum shares to get meaningful assets
-        shares = bound(shares, 1e6, type(uint128).max);
+        shares = bound(shares, 1, type(uint128).max);
 
         uint256 assets = vault.convertToAssets(shares);
 
-        // Should get some assets for shares above the offset threshold
         assertGt(assets, 0, "Should get assets for shares");
     }
 
     function testFuzz_RoundTripConversion(uint256 amount) public view {
         amount = bound(amount, 1e15, type(uint128).max);
 
-        // Assets -> Shares -> Assets
         uint256 shares = vault.convertToShares(amount);
         uint256 assetsBack = vault.convertToAssets(shares);
 
-        // Should get back approximately the same (within small rounding)
         assertApproxEqRel(assetsBack, amount, 0.001e18, "Round trip should preserve value");
     }
 
@@ -183,7 +165,6 @@ contract SplUSDv2FuzzTest is Test {
 
         uint256 shares = vault.previewDeposit(assets);
 
-        // Preview should match convert (for deposits, they're the same)
         assertEq(shares, vault.convertToShares(assets), "Preview should match convert");
     }
 
@@ -192,12 +173,10 @@ contract SplUSDv2FuzzTest is Test {
 
         uint256 assets = vault.previewMint(shares);
 
-        // Should need some assets to mint shares
         assertGt(assets, 0, "Should need assets to mint");
     }
 
     function testFuzz_PreviewWithdraw(uint256 assets) public {
-        // First deposit some assets
         uint256 depositAmount = 10000e18;
         plUSD.mint(alice, depositAmount);
         vm.prank(alice);
@@ -207,24 +186,19 @@ contract SplUSDv2FuzzTest is Test {
 
         uint256 shares = vault.previewWithdraw(assets);
 
-        // Should need some shares to withdraw assets
         assertGt(shares, 0, "Should need shares to withdraw");
     }
 
     function testFuzz_PreviewRedeem(uint256 shares) public {
-        // First deposit some assets
         uint256 depositAmount = 10000e18;
         plUSD.mint(alice, depositAmount);
         vm.prank(alice);
         uint256 aliceShares = vault.deposit(depositAmount, alice);
 
-        // With virtual offset, very small shares may round to 0 assets
-        // Bound to minimum 1e6 to ensure meaningful redemption
-        shares = bound(shares, 1e6, aliceShares);
+        shares = bound(shares, 1, aliceShares);
 
         uint256 assets = vault.previewRedeem(shares);
 
-        // Should get some assets for shares above threshold
         assertGt(assets, 0, "Should get assets for redeem");
     }
 
@@ -238,7 +212,6 @@ contract SplUSDv2FuzzTest is Test {
         uint256[] memory deposits = new uint256[](numDepositors);
         uint256[] memory shares = new uint256[](numDepositors);
 
-        // Each user deposits random amount
         for (uint256 i = 0; i < numDepositors; i++) {
             depositors[i] = makeAddr(string(abi.encodePacked("depositor", i)));
             deposits[i] = uint256(keccak256(abi.encode(seed, i))) % 10000e18 + 1e18;
@@ -255,18 +228,12 @@ contract SplUSDv2FuzzTest is Test {
             assertGt(shares[i], 0, "Should get shares");
         }
 
-        // Verify total assets (excluding seed deposit from admin)
-        assertEq(
-            vault.totalAssets(),
-            totalDeposited + 1000e18, // +1000e18 is the admin seed deposit
-            "Total assets should match"
-        );
+        assertEq(vault.totalAssets(), totalDeposited + SEED_DEPOSIT, "Total assets should match");
     }
 
     // ============ Edge Case Fuzz Tests ============
 
     function testFuzz_SmallDeposits(uint256 amount) public {
-        // Test very small deposits
         amount = bound(amount, 1, 1e15);
 
         plUSD.mint(alice, amount);
@@ -274,17 +241,12 @@ contract SplUSDv2FuzzTest is Test {
         vm.prank(alice);
         uint256 shares = vault.deposit(amount, alice);
 
-        // Should still get some shares even for tiny amounts (due to virtual offset)
-        // Note: for very small amounts, this might be 0 due to rounding
-        // which is acceptable behavior
         if (amount >= 1000) {
-            // For amounts >= 1000 wei, should get shares
             assertGt(shares, 0, "Should get shares for small deposit");
         }
     }
 
     function testFuzz_LargeDeposits(uint256 amount) public {
-        // Test very large deposits
         amount = bound(amount, 1e27, type(uint128).max);
 
         plUSD.mint(alice, amount);
@@ -294,7 +256,6 @@ contract SplUSDv2FuzzTest is Test {
 
         assertGt(shares, 0, "Should get shares for large deposit");
 
-        // Should be able to withdraw
         uint256 maxWithdraw = vault.maxWithdraw(alice);
         assertGt(maxWithdraw, 0, "Should have withdrawable assets");
     }

@@ -33,10 +33,12 @@ quote_style = "double"
 tab_width = 4
 wrap_comments = true
 
-# Plasma Mainnet
+# RPC Endpoints
 [rpc_endpoints]
 plasma = "${PLASMA_RPC_URL}"
 plasma_testnet = "${PLASMA_TESTNET_RPC_URL}"
+sepolia = "${SEPOLIA_RPC_URL}"
 
 [etherscan]
 plasma = { key = "${PLASMASCAN_API_KEY}", url = "https://explorer.plasma.io/api" }
+sepolia = { key = "${ETHERSCAN_API_KEY}" }

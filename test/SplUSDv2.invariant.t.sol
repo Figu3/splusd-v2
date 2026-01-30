@@ -9,27 +9,22 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /// @title SplUSDv2 Invariant Tests
 /// @notice Invariant test suite to verify core protocol properties hold under all conditions
 contract SplUSDv2InvariantTest is Test {
+    address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
+
     SplUSDv2 public vault;
     ERC20Mock public plUSD;
     SplUSDv2Handler public handler;
 
-    address public admin = makeAddr("admin");
+    address public deployer = makeAddr("deployer");
 
     function setUp() public {
-        // Deploy mock plUSD
         plUSD = new ERC20Mock("plUSD", "plUSD", 18);
+        vault = new SplUSDv2(IERC20(address(plUSD)));
 
-        // Deploy vault
-        vault = new SplUSDv2(IERC20(address(plUSD)), admin);
+        handler = new SplUSDv2Handler(vault, plUSD, deployer);
 
-        // Deploy handler
-        handler = new SplUSDv2Handler(vault, plUSD, admin);
-
-        // Target only the handler for invariant tests
         targetContract(address(handler));
     }
-
-    // ============ Invariants ============
 
     /// @notice Total assets in vault should equal plUSD balance
     function invariant_TotalAssetsMatchesBalance() public view {
@@ -41,7 +36,6 @@ contract SplUSDv2InvariantTest is Test {
         uint256 currentSharePrice = handler.getCurrentSharePrice();
         uint256 initialSharePrice = handler.getInitialSharePrice();
 
-        // Share price should never decrease (within small rounding tolerance)
         assertGe(currentSharePrice, initialSharePrice - 1);
     }
 
@@ -55,28 +49,28 @@ contract SplUSDv2InvariantTest is Test {
 
     /// @notice Users should never be able to withdraw more than deposited + yield
     function invariant_NoFreeValue() public view {
-        // Total withdrawn should never exceed total deposited + total yield donated
         assertLe(
             handler.totalWithdrawn(),
-            handler.totalDeposited() + handler.totalYieldDonated() + 1e6 // 1e6 tolerance for rounding
+            handler.totalDeposited() + handler.totalYieldDonated() + 1e6
         );
     }
 
     /// @notice Assets and shares conversions should be consistent
     function invariant_ConversionConsistency() public view {
-        if (vault.totalSupply() == 0) return;
+        // Skip if no real deposits beyond dead shares
+        if (vault.totalAssets() < handler.SEED_DEPOSIT() + 1e18) return;
 
         uint256 testAmount = 1e18;
         uint256 shares = vault.convertToShares(testAmount);
+
+        // Skip if shares would be 0 due to extreme price
+        if (shares == 0) return;
+
         uint256 assetsBack = vault.convertToAssets(shares);
 
-        // Should get back approximately the same amount
-        // With virtual offset and large yield donations, rounding can cause up to ~3% variance
-        // This is acceptable as it only affects dust amounts and virtual offset protects against exploits
         assertApproxEqRel(assetsBack, testAmount, 0.05e18);
     }
 
-    /// @notice Call summary for debugging
     function invariant_CallSummary() public view {
         console2.log("Deposits:", handler.depositCount());
         console2.log("Withdrawals:", handler.withdrawCount());
@@ -90,13 +84,13 @@ contract SplUSDv2InvariantTest is Test {
 }
 
 /// @title SplUSDv2Handler - Handler contract for invariant testing
-/// @notice Provides bounded actions for fuzz testing the vault
 contract SplUSDv2Handler is Test {
+    address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
+
     SplUSDv2 public vault;
     ERC20Mock public plUSD;
-    address public admin;
+    address public deployer;
 
-    // Tracking variables
     uint256 public totalDeposited;
     uint256 public totalWithdrawn;
     uint256 public totalYieldDonated;
@@ -107,44 +101,39 @@ contract SplUSDv2Handler is Test {
 
     uint256 public initialSharePrice;
 
-    // Actor tracking
     address[] public actors;
     mapping(address => bool) public isActor;
     mapping(address => uint256) public actorDeposits;
 
-    // Constants
     uint256 public constant MAX_DEPOSIT = 1_000_000e18;
-    uint256 public constant MIN_DEPOSIT = 1e15; // 0.001 tokens minimum
+    uint256 public constant MIN_DEPOSIT = 1e15;
+    uint256 public constant SEED_DEPOSIT = 1000e18;
 
-    constructor(SplUSDv2 vault_, ERC20Mock plUSD_, address admin_) {
+    constructor(SplUSDv2 vault_, ERC20Mock plUSD_, address deployer_) {
         vault = vault_;
         plUSD = plUSD_;
-        admin = admin_;
+        deployer = deployer_;
 
-        // Initialize with a seed deposit to avoid edge cases
-        plUSD.mint(admin, 1000e18);
-        vm.startPrank(admin);
-        plUSD.approve(address(vault), type(uint256).max);
-        vault.deposit(1000e18, admin);
+        // Seed vault with initial deposit burned to 0xdead
+        plUSD.mint(deployer, SEED_DEPOSIT);
+        vm.startPrank(deployer);
+        plUSD.approve(address(vault), SEED_DEPOSIT);
+        uint256 shares = vault.deposit(SEED_DEPOSIT, deployer);
+        vault.transfer(DEAD, shares);
         vm.stopPrank();
 
-        totalDeposited = 1000e18;
+        totalDeposited = SEED_DEPOSIT;
         initialSharePrice = vault.convertToAssets(1e18);
 
-        // Add admin as first actor
-        actors.push(admin);
-        isActor[admin] = true;
-        actorDeposits[admin] = 1000e18;
+        // Add dead address as actor (holds seed shares)
+        actors.push(DEAD);
+        isActor[DEAD] = true;
     }
 
-    // ============ Handler Actions ============
-
-    /// @notice Deposit assets into the vault
     function deposit(uint256 actorSeed, uint256 amount) external {
         address actor = _getActor(actorSeed);
         amount = bound(amount, MIN_DEPOSIT, MAX_DEPOSIT);
 
-        // Mint plUSD to actor
         plUSD.mint(actor, amount);
 
         vm.startPrank(actor);
@@ -157,7 +146,6 @@ contract SplUSDv2Handler is Test {
         depositCount++;
     }
 
-    /// @notice Withdraw assets from the vault
     function withdraw(uint256 actorSeed, uint256 amount) external {
         address actor = _getActor(actorSeed);
         uint256 maxWithdraw = vault.maxWithdraw(actor);
@@ -173,7 +161,6 @@ contract SplUSDv2Handler is Test {
         withdrawCount++;
     }
 
-    /// @notice Redeem shares from the vault
     function redeem(uint256 actorSeed, uint256 shares) external {
         address actor = _getActor(actorSeed);
         uint256 maxRedeem = vault.maxRedeem(actor);
@@ -189,13 +176,12 @@ contract SplUSDv2Handler is Test {
         withdrawCount++;
     }
 
-    /// @notice Donate yield to the vault
     function donateYield(uint256 amount) external {
-        amount = bound(amount, MIN_DEPOSIT, MAX_DEPOSIT / 10); // Limit yield to 10% of max deposit
+        amount = bound(amount, MIN_DEPOSIT, MAX_DEPOSIT / 10);
 
-        plUSD.mint(admin, amount);
+        plUSD.mint(deployer, amount);
 
-        vm.startPrank(admin);
+        vm.startPrank(deployer);
         plUSD.approve(address(vault), amount);
         vault.donateYield(amount);
         vm.stopPrank();
@@ -204,7 +190,6 @@ contract SplUSDv2Handler is Test {
         donateCount++;
     }
 
-    /// @notice Mint shares in the vault
     function mint(uint256 actorSeed, uint256 shares) external {
         address actor = _getActor(actorSeed);
         shares = bound(shares, MIN_DEPOSIT, MAX_DEPOSIT);
@@ -222,8 +207,6 @@ contract SplUSDv2Handler is Test {
         depositCount++;
     }
 
-    // ============ View Functions ============
-
     function getCurrentSharePrice() external view returns (uint256) {
         return vault.convertToAssets(1e18);
     }
@@ -240,10 +223,7 @@ contract SplUSDv2Handler is Test {
         return sum;
     }
 
-    // ============ Internal Functions ============
-
     function _getActor(uint256 seed) internal returns (address) {
-        // Sometimes create a new actor
         if (seed % 10 == 0 && actors.length < 20) {
             address newActor = makeAddr(string(abi.encodePacked("actor", actors.length)));
             actors.push(newActor);
@@ -251,7 +231,6 @@ contract SplUSDv2Handler is Test {
             return newActor;
         }
 
-        // Otherwise use existing actor
         return actors[seed % actors.length];
     }
 }

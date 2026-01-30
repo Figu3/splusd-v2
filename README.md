@@ -36,7 +36,6 @@ splUSD v2 is a simplified staking mechanism where:
     │  • deposit(plUSD) → mint splUSD     │
     │  • withdraw(plUSD) ← burn splUSD    │
     │  • donateYield(plUSD) → ↑ share val │
-    │  • pause/unpause (emergency)        │
     └─────────────────────────────────────┘
 ```
 
@@ -99,10 +98,10 @@ forge script script/Deploy.s.sol:DeployScript \
 
 ## Security Features
 
-- **Pausability**: Admin can pause deposits/withdrawals in emergencies
-- **Ownable2Step**: Two-step ownership transfer prevents accidental transfers
-- **Inflation Attack Protection**: Virtual shares offset (1e6) protects first depositors
+- **Inflation Attack Protection**: Initial seed deposit burned to `0xdead` prevents first depositor attacks
+- **Minimal Code**: ~37 lines of custom code on top of battle-tested OpenZeppelin ERC4626
 - **SafeERC20**: All token operations use SafeERC20 wrapper
+- **No Admin Keys**: No pause, no ownership - fully immutable after deployment
 
 ## Key Functions
 
@@ -114,13 +113,11 @@ forge script script/Deploy.s.sol:DeployScript \
 | `withdraw(assets, receiver, owner)` | Withdraw plUSD by burning shares |
 | `redeem(shares, receiver, owner)` | Redeem shares for plUSD |
 
-### Admin Functions
+### Yield Functions
 
 | Function | Description |
 |----------|-------------|
-| `donateYield(amount)` | Inject yield to increase share value |
-| `pause()` | Emergency pause all operations |
-| `unpause()` | Resume normal operations |
+| `donateYield(amount)` | Anyone can inject yield to increase share value |
 
 ### View Functions
 
@@ -129,8 +126,8 @@ forge script script/Deploy.s.sol:DeployScript \
 | `totalAssets()` | Total plUSD in vault |
 | `convertToShares(assets)` | Preview plUSD → splUSD conversion |
 | `convertToAssets(shares)` | Preview splUSD → plUSD conversion |
-| `maxDeposit(owner)` | Max depositable (0 when paused) |
-| `maxWithdraw(owner)` | Max withdrawable (0 when paused) |
+| `maxDeposit(owner)` | Max depositable |
+| `maxWithdraw(owner)` | Max withdrawable |
 
 ## Addresses
 
@@ -138,9 +135,9 @@ forge script script/Deploy.s.sol:DeployScript \
 
 | Contract | Address |
 |----------|---------|
-| plUSD | `0xf91c31299E998C5127Bc5F11e4a657FC0cF358CD` |
-| splUSD v1 (deprecated) | `0x616185600989Bf8339b58aC9e539d49536598343` |
-| splUSD v2 | TBD |
+| plUSD | [`0xf91c31299E998C5127Bc5F11e4a657FC0cF358CD`](https://plasmascan.to/address/0xf91c31299E998C5127Bc5F11e4a657FC0cF358CD) |
+| splUSD v1 (deprecated) | [`0x616185600989Bf8339b58aC9e539d49536598343`](https://plasmascan.to/address/0x616185600989Bf8339b58aC9e539d49536598343) |
+| splUSD v2 | [`0x63C6798DD4C3fAFD6d787cDaFf85FEED82Da8442`](https://plasmascan.to/address/0x63C6798DD4C3fAFD6d787cDaFf85FEED82Da8442) |
 
 ## License
 
