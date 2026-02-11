@@ -7,7 +7,7 @@ export const plasma = defineChain({
   name: "Plasma",
   nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
   rpcUrls: {
-    default: { http: ["https://rpc.plasma.io/v1/plasma"] },
+    default: { http: ["https://plasma.drpc.org"] },
   },
   blockExplorers: {
     default: { name: "PlasmaExplorer", url: "https://plasmascan.to" },
