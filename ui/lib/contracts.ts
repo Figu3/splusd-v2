@@ -1,5 +1,7 @@
 export const SPLUSD_V2_ADDRESS = "0x63C6798DD4C3fAFD6d787cDaFf85FEED82Da8442" as const;
 export const PLUSD_ADDRESS = "0xf91c31299E998C5127Bc5F11e4a657FC0cF358CD" as const;
+export const USDT0_ADDRESS = "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb" as const;
+export const ROUTER_ADDRESS = "0x1Ec2b9a77A7226ACD457954820197F89B3E3a578" as const;
 
 export const SPLUSD_V2_ABI = [
   {
@@ -38,12 +40,49 @@ export const SPLUSD_V2_ABI = [
     stateMutability: "view",
   },
   {
+    type: "function",
+    name: "deposit",
+    inputs: [
+      { name: "assets", type: "uint256", internalType: "uint256" },
+      { name: "receiver", type: "address", internalType: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "nonpayable",
+  },
+  {
     type: "event",
     name: "YieldDonated",
     inputs: [
       { name: "donor", type: "address", indexed: true, internalType: "address" },
       { name: "amount", type: "uint256", indexed: false, internalType: "uint256" },
     ],
+  },
+] as const;
+
+export const ROUTER_ABI = [
+  {
+    type: "function",
+    name: "mint",
+    inputs: [
+      { name: "token", type: "address", internalType: "address" },
+      { name: "amount", type: "uint256", internalType: "uint256" },
+      { name: "stake", type: "bool", internalType: "bool" },
+      { name: "receiver", type: "address", internalType: "address" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "event",
+    name: "Minted",
+    inputs: [
+      { name: "inToken", type: "address", indexed: false, internalType: "address" },
+      { name: "inAmount", type: "uint256", indexed: false, internalType: "uint256" },
+      { name: "outToken", type: "address", indexed: false, internalType: "address" },
+      { name: "outAmount", type: "uint256", indexed: false, internalType: "uint256" },
+      { name: "receiver", type: "address", indexed: false, internalType: "address" },
+    ],
+    anonymous: false,
   },
 ] as const;
 
