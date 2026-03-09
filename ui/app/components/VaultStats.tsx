@@ -36,8 +36,14 @@ export function VaultStats() {
 
   useEffect(() => {
     fetch("/api/yield")
-      .then((res) => res.json())
-      .then((d) => setYieldData(d))
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((d) => {
+        // Only set if response has expected shape
+        if (d?.apr && d?.yieldDonated) setYieldData(d);
+      })
       .catch(() => {}); // Silently fail — on-chain stats still show
   }, []);
 

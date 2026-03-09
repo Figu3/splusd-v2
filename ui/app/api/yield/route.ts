@@ -51,7 +51,10 @@ export async function GET() {
 
     const client = createPublicClient({
       chain: plasma,
-      transport: http("https://plasma.drpc.org"),
+      transport: http("https://plasma.drpc.org", {
+        timeout: 15_000,
+        retryCount: 2,
+      }),
     });
 
     // 1. Read current on-chain state
@@ -183,8 +186,9 @@ export async function GET() {
     return Response.json(result, { headers: corsHeaders() });
   } catch (error) {
     console.error("Yield API error:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
     return Response.json(
-      { error: "Failed to fetch yield data" },
+      { error: "Failed to fetch yield data", detail: message },
       { status: 500, headers: corsHeaders() }
     );
   }
